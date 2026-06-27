@@ -199,7 +199,7 @@
 
         #main-chart { width: 100%; height: 520px; }
         #macd-chart, #rsi-chart { width: 100%; height: 260px; }
-        #realtime-chart, #capital-chart, #sector-chart, #backtest-chart { width: 100%; height: 400px; }
+        #realtime-chart, #capital-chart, #sector-chart, #backtest-chart { width: 100%; height: 480px; }
 
         .chart-row {
             display: flex;
@@ -761,10 +761,16 @@
             data.history.forEach(d=>{detailMap[d.date]=d;});
 
             charts['capital-chart'].setOption({
-                title:{text:data.name+' 资金流向',left:'center',textStyle:{fontSize:14,fontWeight:600}},
+                title:{
+                    text:data.name+' 资金流向',
+                    left:'center',
+                    top:0,
+                    textStyle:{fontSize:15,fontWeight:600,color:'#1e293b'}
+                },
                 tooltip:{
                     trigger:'axis',
                     axisPointer:{type:'shadow'},
+                    confine:true,
                     formatter:function(p){
                         if(!p||!p.length)return '';
                         const item=p[0];
@@ -785,38 +791,62 @@
                     }
                 },
                 legend:{show:false},
-                grid:{left:'14%',right:'5%',top:'16%',bottom:'12%'},
-                xAxis:{type:'category',data:dates,axisLabel:{fontSize:11,rotate:15,interval:0}},
+                grid:{
+                    left:80,
+                    right:30,
+                    top:50,
+                    bottom:60,
+                    containLabel:false
+                },
+                xAxis:{
+                    type:'category',
+                    data:dates,
+                    axisLabel:{
+                        fontSize:11,
+                        rotate:20,
+                        interval:0,
+                        margin:12,
+                        color:'#64748b'
+                    }
+                },
                 yAxis:{
                     type:'value',
                     name:'万元',
-                    axisLabel:{fontSize:11},
-                    splitLine:{lineStyle:{type:'dashed',color:'#e2e8f0'}}
+                    nameTextStyle:{fontSize:12,color:'#94a3b8',padding:[0,0,0,8]},
+                    axisLabel:{
+                        fontSize:11,
+                        color:'#64748b',
+                        formatter:function(v){return v>=0?v.toLocaleString():v}
+                    },
+                    splitLine:{lineStyle:{type:'dashed',color:'#e2e8f0'}},
+                    splitNumber:5
                 },
                 markLine:{
                     silent:true,
                     symbol:'none',
-                    lineStyle:{type:'solid',color:'#94a3b8',width:1},
+                    lineStyle:{type:'solid',color:'#cbd5e1',width:1},
                     data:[{yAxis:0}]
                 },
                 series:[{
                     name:'主力净流入',
                     type:'bar',
                     data:mainArr,
-                    barMaxWidth:36,
-                    barGap:'30%',
+                    barMaxWidth:32,
+                    barGap:'40%',
                     itemStyle:{
-                        borderRadius:[2,2,0,0],
+                        borderRadius:[3,3,0,0],
                         color:function(params){return params.value>=0?'#ef4444':'#10b981';}
                     },
                     label:{
                         show:true,
                         position:'top',
-                        fontSize:10,
+                        fontSize:9,
+                        color:'#475569',
                         formatter:function(p){
-                            if(p.value===0) return '';
+                            if(Math.abs(p.value)<100) return '';
                             return (p.value>0?'+':'')+p.value;
-                        }
+                        },
+                        distance:4
                     }
                 }]
             },true);
