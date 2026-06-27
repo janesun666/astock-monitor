@@ -660,7 +660,7 @@
         let currentStockCode=null,currentSectorFilter=null,charts={},activeIndicators=['ma','macd','rsi'];
         let config=null,alerts=[],stockData={},klineCache={},capitalDataCache=null,sectorDataCache=null;
 
-        async function apiGet(u){try{return await(await fetch(u)).json()}catch(e){return null}}
+        async function apiGet(u){try{const sep=u.includes('?')?'&':'?';return await(await fetch(u+sep+'_='+Date.now())).json()}catch(e){return null}}
         async function apiPost(u,d){try{return await(await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})).json()}catch(e){return null}}
 
         document.addEventListener('DOMContentLoaded',async function(){
