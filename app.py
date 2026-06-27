@@ -11,7 +11,9 @@ import time
 import random
 import os
 import sys
+import threading
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 import pandas as pd
@@ -38,19 +40,54 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# ====== 默认配置 ======
+# ====== 默认配置（30+热门A股）======
 DEFAULT_CONFIG = {
     "monitor_stocks": [
+        # 消费板块 7只
         {"code": "600519", "name": "贵州茅台", "sector": "消费", "enabled": True},
         {"code": "000858", "name": "五粮液", "sector": "消费", "enabled": True},
+        {"code": "000568", "name": "泸州老窖", "sector": "消费", "enabled": True},
+        {"code": "600809", "name": "山西汾酒", "sector": "消费", "enabled": True},
+        {"code": "000333", "name": "美的集团", "sector": "消费", "enabled": True},
+        {"code": "603288", "name": "海天味业", "sector": "消费", "enabled": True},
+        {"code": "600887", "name": "伊利股份", "sector": "消费", "enabled": True},
+        # 金融板块 6只
         {"code": "601318", "name": "中国平安", "sector": "金融", "enabled": True},
         {"code": "600036", "name": "招商银行", "sector": "金融", "enabled": True},
-        {"code": "000333", "name": "美的集团", "sector": "消费", "enabled": True},
+        {"code": "601166", "name": "兴业银行", "sector": "金融", "enabled": True},
+        {"code": "600030", "name": "中信证券", "sector": "金融", "enabled": True},
+        {"code": "601688", "name": "华泰证券", "sector": "金融", "enabled": True},
+        {"code": "601328", "name": "交通银行", "sector": "金融", "enabled": True},
+        # 科技板块 5只
+        {"code": "000063", "name": "中兴通讯", "sector": "科技", "enabled": True},
+        {"code": "002415", "name": "海康威视", "sector": "科技", "enabled": True},
+        {"code": "002230", "name": "科大讯飞", "sector": "科技", "enabled": True},
+        {"code": "600406", "name": "国电南瑞", "sector": "科技", "enabled": True},
+        {"code": "002236", "name": "大华股份", "sector": "科技", "enabled": True},
+        # 新能源板块 5只
         {"code": "300750", "name": "宁德时代", "sector": "新能源", "enabled": True},
         {"code": "002594", "name": "比亚迪", "sector": "新能源", "enabled": True},
+        {"code": "300274", "name": "阳光电源", "sector": "新能源", "enabled": True},
+        {"code": "002459", "name": "晶澳科技", "sector": "新能源", "enabled": True},
+        {"code": "600438", "name": "通威股份", "sector": "新能源", "enabled": True},
+        # 医药板块 5只
         {"code": "600276", "name": "恒瑞医药", "sector": "医药", "enabled": True},
+        {"code": "000661", "name": "长春高新", "sector": "医药", "enabled": True},
+        {"code": "300760", "name": "迈瑞医疗", "sector": "医药", "enabled": True},
+        {"code": "603259", "name": "药明康德", "sector": "医药", "enabled": True},
+        {"code": "000538", "name": "云南白药", "sector": "医药", "enabled": True},
+        # 半导体板块 5只
         {"code": "688981", "name": "中芯国际", "sector": "半导体", "enabled": True},
-        {"code": "000063", "name": "中兴通讯", "sector": "科技", "enabled": True}
+        {"code": "688012", "name": "中微公司", "sector": "半导体", "enabled": True},
+        {"code": "002049", "name": "紫光国微", "sector": "半导体", "enabled": True},
+        {"code": "603501", "name": "韦尔股份", "sector": "半导体", "enabled": True},
+        {"code": "688008", "name": "澜起科技", "sector": "半导体", "enabled": True},
+        # 大盘蓝筹 5只
+        {"code": "601857", "name": "中国石油", "sector": "大盘蓝筹", "enabled": True},
+        {"code": "601398", "name": "工商银行", "sector": "大盘蓝筹", "enabled": True},
+        {"code": "600028", "name": "中国石化", "sector": "大盘蓝筹", "enabled": True},
+        {"code": "601288", "name": "农业银行", "sector": "大盘蓝筹", "enabled": True},
+        {"code": "601988", "name": "中国银行", "sector": "大盘蓝筹", "enabled": True}
     ],
     "sectors": ["消费", "金融", "科技", "新能源", "医药", "半导体", "大盘蓝筹"],
     "thresholds": {
@@ -69,6 +106,31 @@ DEFAULT_CONFIG = {
 alerts_history = []
 stock_cache = {}
 last_alert_time = {}
+
+# ====== 数据缓存 ======
+_realtime_cache = {}       # {code: (data, timestamp)}
+_realtime_cache_lock = threading.Lock()
+_all_stocks_cache = None   # 全A股实时数据缓存
+_all_stocks_cache_time = 0
+_CACHE_TTL = 15            # 缓存15秒
+_AKSHARE_TIMEOUT = 8       # AKShare调用超时8秒
+
+
+def call_with_timeout(func, args=(), kwargs=None, timeout=8):
+    """带超时地调用函数，超时返回None"""
+    if kwargs is None:
+        kwargs = {}
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                return future.result(timeout=timeout)
+            except FuturesTimeoutError:
+                print(f"⚠️ AKShare调用超时({timeout}秒): {func.__name__}")
+                return None
+    except Exception as e:
+        print(f"⚠️ AKShare调用异常: {func.__name__} - {e}")
+        return None
 
 
 # ====== 工具函数 ======
@@ -109,32 +171,55 @@ def get_sector_stocks(sector):
 
 # ====== 数据获取函数 ======
 def get_realtime_price_akshare(code):
-    """使用 AKShare 获取实时价格"""
+    """使用 AKShare 获取实时价格（带缓存和超时）"""
     if not AKSHARE_AVAILABLE:
         return None
     
+    # 检查缓存
+    with _realtime_cache_lock:
+        if code in _realtime_cache:
+            data, ts = _realtime_cache[code]
+            if time.time() - ts < _CACHE_TTL:
+                return data
+    
     try:
-        # 获取实时行情
-        df = ak.stock_zh_a_spot_em()
+        # 获取全A股实时数据（带超时）
+        global _all_stocks_cache, _all_stocks_cache_time
+        
+        df = None
+        # 如果缓存有效，直接用缓存
+        if _all_stocks_cache is not None and time.time() - _all_stocks_cache_time < _CACHE_TTL:
+            df = _all_stocks_cache
+        else:
+            # 带超时调用AKShare
+            df = call_with_timeout(ak.stock_zh_a_spot_em, timeout=_AKSHARE_TIMEOUT)
+            if df is not None:
+                _all_stocks_cache = df
+                _all_stocks_cache_time = time.time()
+        
         if df is not None and not df.empty:
             stock = df[df['代码'] == code]
             if not stock.empty:
                 s = stock.iloc[0]
-                return {
+                result = {
                     "code": code,
                     "name": s.get('名称', code),
-                    "price": float(s.get('最新价', 0)),
-                    "open": float(s.get('今开', 0)),
-                    "high": float(s.get('最高', 0)),
-                    "low": float(s.get('最低', 0)),
-                    "pre_close": float(s.get('昨收', 0)),
-                    "change": float(s.get('涨跌额', 0)),
-                    "change_pct": float(s.get('涨跌幅', 0)),
-                    "volume": int(s.get('成交量', 0)),
-                    "amount": float(s.get('成交额', 0)),
-                    "turnover": float(s.get('换手率', 0)),
+                    "price": float(s.get('最新价', 0) or 0),
+                    "open": float(s.get('今开', 0) or 0),
+                    "high": float(s.get('最高', 0) or 0),
+                    "low": float(s.get('最低', 0) or 0),
+                    "pre_close": float(s.get('昨收', 0) or 0),
+                    "change": float(s.get('涨跌额', 0) or 0),
+                    "change_pct": float(s.get('涨跌幅', 0) or 0),
+                    "volume": int(s.get('成交量', 0) or 0),
+                    "amount": float(s.get('成交额', 0) or 0),
+                    "turnover": float(s.get('换手率', 0) or 0),
                     "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
+                # 写入缓存
+                with _realtime_cache_lock:
+                    _realtime_cache[code] = (result, time.time())
+                return result
     except Exception as e:
         print(f"获取实时价格失败({code}): {e}")
     
@@ -149,7 +234,7 @@ def get_kline_data_akshare(code, period="daily", count=100):
     try:
         # period: daily, weekly, monthly
         # 使用东方财富的数据接口
-        df = ak.stock_zh_a_hist(symbol=code, period=period, adjust="qfq")
+        df = call_with_timeout(ak.stock_zh_a_hist, kwargs={"symbol": code, "period": period, "adjust": "qfq"}, timeout=_AKSHARE_TIMEOUT)
         
         if df is not None and not df.empty:
             # 取最近 count 条
@@ -181,7 +266,7 @@ def get_intraday_data_akshare(code):
         return None
     
     try:
-        df = ak.stock_zh_a_hist_min_em(symbol=code, period='1', adjust='qfq')
+        df = call_with_timeout(ak.stock_zh_a_hist_min_em, kwargs={"symbol": code, "period": "1", "adjust": "qfq"}, timeout=_AKSHARE_TIMEOUT)
         
         if df is not None and not df.empty:
             df = df.tail(240)  # 最近4小时（1分钟线）
@@ -209,7 +294,7 @@ def get_fund_flow_akshare(code):
     
     try:
         # 个股资金流
-        df = ak.stock_individual_fund_flow_rank(symbol='即时')
+        df = call_with_timeout(ak.stock_individual_fund_flow_rank, kwargs={"symbol": "即时"}, timeout=_AKSHARE_TIMEOUT)
         if df is not None and not df.empty:
             stock = df[df['代码'] == code]
             if not stock.empty:
@@ -236,7 +321,8 @@ def get_dragon_tiger_list():
         return None
     
     try:
-        df = ak.stock_lhb_detail_em(date=datetime.now().strftime("%Y%m%d"))
+        today = datetime.now().strftime("%Y%m%d")
+        df = call_with_timeout(ak.stock_lhb_detail_em, kwargs={"date": today}, timeout=_AKSHARE_TIMEOUT)
         
         if df is not None and not df.empty:
             result = []
@@ -266,7 +352,7 @@ def get_sector_list_akshare():
     
     try:
         # 获取行业板块
-        df = ak.stock_board_industry_name_em()
+        df = call_with_timeout(ak.stock_board_industry_name_em, timeout=_AKSHARE_TIMEOUT)
         
         if df is not None and not df.empty:
             result = []
