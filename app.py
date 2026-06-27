@@ -12,6 +12,8 @@ import random
 import os
 import sys
 import threading
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from flask import Flask, render_template, jsonify, request, send_from_directory
@@ -170,6 +172,77 @@ def get_sector_stocks(sector):
 
 
 # ====== 数据获取函数 ======
+
+# 股票名称缓存
+_stock_name_cache = {}
+
+def get_realtime_price_sina(code):
+    """使用新浪财经API获取实时价格（轻量、快速、带5秒超时）"""
+    try:
+        # 确定前缀：6开头是sh，0/3开头是sz
+        if code.startswith('6'):
+            prefix = 'sh'
+        else:
+            prefix = 'sz'
+        
+        url = f"http://hq.sinajs.cn/list={prefix}{code}"
+        req = urllib.request.Request(url, headers={
+            'Referer': 'http://finance.sina.com.cn',
+            'User-Agent': 'Mozilla/5.0'
+        })
+        
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            content = resp.read().decode('gbk', errors='ignore')
+        
+        # 解析: var hq_str_sh600519="贵州茅台,1680.00,...";
+        if '=' in content and '"' in content:
+            data_str = content.split('"')[1]
+            if not data_str:
+                return None
+            
+            fields = data_str.split(',')
+            if len(fields) < 10:
+                return None
+            
+            name = fields[0]
+            open_price = float(fields[1]) if fields[1] else 0
+            pre_close = float(fields[2]) if fields[2] else 0
+            current_price = float(fields[3]) if fields[3] else 0
+            high = float(fields[4]) if fields[4] else 0
+            low = float(fields[5]) if fields[5] else 0
+            volume = int(float(fields[8])) if fields[8] else 0
+            amount = float(fields[9]) if fields[9] else 0
+            
+            if current_price == 0:
+                current_price = pre_close
+            
+            change = round(current_price - pre_close, 2)
+            change_pct = round((change / pre_close * 100), 2) if pre_close > 0 else 0
+            
+            result = {
+                "code": code,
+                "name": name,
+                "price": current_price,
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "pre_close": pre_close,
+                "change": change,
+                "change_pct": change_pct,
+                "volume": volume,
+                "amount": amount,
+                "turnover": 0,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            _stock_name_cache[code] = name
+            return result
+    except Exception as e:
+        print(f"新浪API获取实时价格失败({code}): {e}")
+    
+    return None
+
+
 def get_realtime_price_akshare(code):
     """使用 AKShare 获取实时价格（带缓存和超时）"""
     if not AKSHARE_AVAILABLE:
@@ -655,9 +728,110 @@ def api_status():
     return jsonify({
         "status": "ok",
         "akshare_available": AKSHARE_AVAILABLE,
-        "data_mode": "real" if AKSHARE_AVAILABLE else "demo",
+        "sina_api": True,
+        "data_mode": "real",
+        "data_source": "sina + akshare",
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
+
+
+def get_batch_realtime_sina(codes):
+    """批量获取多只股票的实时数据（新浪API，一次请求）"""
+    try:
+        # 构造新浪代码列表
+        sina_codes = []
+        for code in codes:
+            code = format_stock_code(code)
+            prefix = 'sh' if code.startswith('6') else 'sz'
+            sina_codes.append(f"{prefix}{code}")
+        
+        url = f"http://hq.sinajs.cn/list={','.join(sina_codes)}"
+        req = urllib.request.Request(url, headers={
+            'Referer': 'http://finance.sina.com.cn',
+            'User-Agent': 'Mozilla/5.0'
+        })
+        
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            content = resp.read().decode('gbk', errors='ignore')
+        
+        results = []
+        lines = content.strip().split('\n')
+        for i, line in enumerate(lines):
+            if i >= len(codes):
+                break
+            
+            code = format_stock_code(codes[i])
+            if '=' in line and '"' in line:
+                data_str = line.split('"')[1]
+                if not data_str:
+                    continue
+                
+                fields = data_str.split(',')
+                if len(fields) < 10:
+                    continue
+                
+                name = fields[0]
+                open_price = float(fields[1]) if fields[1] else 0
+                pre_close = float(fields[2]) if fields[2] else 0
+                current_price = float(fields[3]) if fields[3] else 0
+                high = float(fields[4]) if fields[4] else 0
+                low = float(fields[5]) if fields[5] else 0
+                volume = int(float(fields[8])) if fields[8] else 0
+                amount = float(fields[9]) if fields[9] else 0
+                
+                if current_price == 0:
+                    current_price = pre_close
+                
+                change = round(current_price - pre_close, 2)
+                change_pct = round((change / pre_close * 100), 2) if pre_close > 0 else 0
+                
+                results.append({
+                    "code": code,
+                    "name": name,
+                    "price": current_price,
+                    "open": open_price,
+                    "high": high,
+                    "low": low,
+                    "pre_close": pre_close,
+                    "change": change,
+                    "change_pct": change_pct,
+                    "volume": volume,
+                    "amount": amount,
+                    "turnover": 0,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+                _stock_name_cache[code] = name
+        
+        return results
+    except Exception as e:
+        print(f"新浪批量API失败: {e}")
+        return []
+
+
+@app.route('/api/stocks/realtime')
+def api_all_realtime():
+    """批量获取所有监控股票的实时数据"""
+    config = load_config()
+    codes = [s['code'] for s in config['monitor_stocks'] if s.get('enabled', True)]
+    
+    # 优先使用新浪批量API
+    results = get_batch_realtime_sina(codes)
+    if results:
+        return jsonify({"data": results, "source": "sina"})
+    
+    # 备用：逐个获取
+    results = []
+    for code in codes:
+        data = get_realtime_price_sina(code)
+        if data:
+            results.append(data)
+    
+    if results:
+        return jsonify({"data": results, "source": "sina"})
+    
+    # 最终备用：模拟数据
+    results = [generate_demo_realtime(code) for code in codes]
+    return jsonify({"data": results, "source": "demo"})
 
 
 @app.route('/api/config')
@@ -679,12 +853,18 @@ def api_realtime(code):
     """获取实时行情"""
     code = format_stock_code(code)
     
+    # 优先使用新浪API（快速、轻量）
+    data = get_realtime_price_sina(code)
+    if data:
+        return jsonify(data)
+    
+    # 备用：AKShare（带超时）
     if AKSHARE_AVAILABLE:
         data = get_realtime_price_akshare(code)
         if data:
             return jsonify(data)
     
-    # 返回模拟数据
+    # 最终备用：模拟数据
     return jsonify(generate_demo_realtime(code))
 
 
