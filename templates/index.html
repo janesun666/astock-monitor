@@ -188,27 +188,25 @@
         }
         
         /* 图表容器 */
-        .chart-container { 
-            flex: 1; 
-            min-height: 400px;
-            margin-bottom: 15px;
+        .chart-container {
+            flex: 1;
+            min-height: 450px;
+            margin-bottom: 10px;
         }
-        
+
+        #main-chart { width: 100%; height: 520px; }
+        #macd-chart, #rsi-chart { width: 100%; height: 260px; }
+        #realtime-chart, #capital-chart, #sector-chart, #backtest-chart { width: 100%; height: 400px; }
+
         .chart-row {
             display: flex;
             gap: 15px;
-            margin-bottom: 15px;
+            margin-bottom: 0;
         }
-        
+
         .chart-half {
             flex: 1;
-            min-height: 300px;
-        }
-        
-        #main-chart, #volume-chart, #macd-chart, #rsi-chart, #capital-chart, #backtest-chart { 
-            width: 100%; 
-            height: 100%; 
-            min-height: 300px; 
+            min-height: 280px;
         }
         
         /* 数据表格 */
@@ -698,23 +696,25 @@
             ser.push({name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,
                 data:vols.map((v,i)=>({value:v,itemStyle:{color:kl[i][1]>=kl[i][0]?'#ef4444':'#10b981'}}))});
             charts['main-chart'].setOption({
-                title:{text:s.name+' ('+code+') - K线图',left:'center',top:6},
+                title:{text:s.name+' ('+code+') - K线图',left:'center',top:6,textStyle:{fontSize:14}},
                 tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
-                legend:{data:ser.map(x=>x.name),top:36},
-                grid:[{left:'8%',right:'8%',top:'14%',height:'48%'},{left:'8%',right:'8%',top:'68%',height:'12%'}],
-                xAxis:[{type:'category',gridIndex:0,data:dates,axisLine:{onZero:false}},{type:'category',gridIndex:1,data:dates}],
-                yAxis:[{scale:true,gridIndex:0},{scale:true,gridIndex:1}],
-                series:ser
+                legend:{data:ser.map(x=>x.name),top:32},
+                grid:[{left:'10%',right:'5%',top:'14%',height:'48%'},{left:'10%',right:'5%',top:'68%',height:'12%'}],
+                xAxis:[{type:'category',gridIndex:0,data:dates,axisLine:{onZero:false},axisLabel:{fontSize:11}},{type:'category',gridIndex:1,data:dates,axisLabel:{fontSize:10}}],
+                yAxis:[{scale:true,gridIndex:0,splitLine:{lineStyle:{color:'#f0f0f0'}}},{scale:true,gridIndex:1,splitLine:{show:false}}],
+                series:ser,
+                dataZoom:[{type:'inside',xAxisIndex:[0,1],start:50,end:100}]
             },true);
         }
 
         function drawMACD(data){
-            if(!charts['macd-chart']||(data.indicators||{}).dif)return;
-            const i=data.indicators;
+            if(!charts['macd-chart'])return;
+            const i=data.indicators||{};
+            if(!i.dif||!i.dea||!i.macd)return;
             charts['macd-chart'].setOption({title:{text:'MACD',left:'center',textStyle:{fontSize:13}},
-                tooltip:{trigger:'axis'},legend:{data:['DIF','DEA','MACD'],top:6},
-                xAxis:{type:'category',data:data.data.map(d=>d.date)},yAxis:{type:'value'},
-                series:[{name:'DIF',type:'line',data:i.dif,lineStyle:{width:1},symbol:'none'},{name:'DEA',type:'line',data:i.dea,lineStyle:{width:1,color:'#fa8c16'},symbol:'none'},{name:'MACD',type:'bar',data:i.macd,itemStyle:{color:p=>p.value>=0?'#ef4444':'#10b981'}}]},true);
+                tooltip:{trigger:'axis'},legend:{data:['DIF','DEA','MACD'],top:6},grid:{left:'8%',right:'4%',top:'18%',bottom:'12%'},
+                xAxis:{type:'category',data:data.data.map(d=>d.date),axisLabel:{fontSize:10}},yAxis:{type:'value'},
+                series:[{name:'DIF',type:'line',data:i.dif,lineStyle:{width:1.2},symbol:'none'},{name:'DEA',type:'line',data:i.dea,lineStyle:{width:1.2,color:'#fa8c16'},symbol:'none'},{name:'MACD',type:'bar',data:i.macd,itemStyle:{color:p=>p.value>=0?'#ef4444':'#10b981'}}]},true);
         }
 
         function drawRSI(data){
@@ -724,9 +724,9 @@
             if(i.rsi12)ser.push({name:'RSI12',type:'line',data:i.rsi12,lineStyle:{width:1,color:'#3b82f6'},symbol:'none'});
             if(!ser.length)return;
             charts['rsi-chart'].setOption({title:{text:'RSI',left:'center',textStyle:{fontSize:13}},
-                tooltip:{trigger:'axis'},legend:{data:ser.map(s=>s.name),top:6},
-                xAxis:{type:'category',data:data.data.map(d=>d.date)},yAxis:{type:'value',min:0,max:100},series:ser,
-                markLine:{silent:true,data:[{yAxis:30,lineStyle:{color:'#10b981',type:'dashed'}},{yAxis:70,lineStyle:{color:'#ef4444',type:'dashed'}}]}},true);
+                tooltip:{trigger:'axis'},legend:{data:ser.map(s=>s.name),top:6},grid:{left:'8%',right:'4%',top:'18%',bottom:'12%'},
+                xAxis:{type:'category',data:data.data.map(d=>d.date),axisLabel:{fontSize:10}},yAxis:{type:'value',min:0,max:100},series:ser,
+                markLine:{silent:true,data:[{yAxis:30,lineStyle:{color:'#10b981',type:'dashed',width:1}},{yAxis:70,lineStyle:{color:'#ef4444',type:'dashed',width:1}}]}},true);
         }
 
         function drawRT(code,rt){
@@ -740,8 +740,8 @@
                 prices.push(+(bp*(1+(Math.random()-0.5)*0.01)).toFixed(2));
             }
             const avg=prices.reduce((a,b)=>a+b,0)/prices.length;
-            charts['realtime-chart'].setOption({title:{text:(rt.name||code)+' - 分时走势',left:'center',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},
-                xAxis:{type:'category',data:times},yAxis:{type:'value',scale:true},
+            charts['realtime-chart'].setOption({title:{text:(rt.name||code)+' - 分时走势',left:'center',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},grid:{left:'8%',right:'4%',top:'15%',bottom:'10%'},
+                xAxis:{type:'category',data:times,axisLabel:{fontSize:10}},yAxis:{type:'value',scale:true},
                 series:[{name:'价格',type:'line',data:prices,smooth:true,lineStyle:{width:2,color:'#1890ff'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(24,144,255,0.25)'},{offset:1,color:'rgba(24,144,255,0.02)'}]}}},
                     {name:'均价',type:'line',data:prices.map(()=>avg),lineStyle:{width:1,color:'#999',type:'dashed'},symbol:'none'}]},true);
         }
@@ -749,8 +749,8 @@
         function drawCap(data){
             if(!charts['capital-chart']||!data.history)return;
             charts['capital-chart'].setOption({title:{text:data.name+'('+data.code+') - 资金流向',left:'center',textStyle:{fontSize:14}},
-                tooltip:{trigger:'axis'},legend:{data:['主力净流入','超大单','大单'],top:6},
-                xAxis:{type:'category',data:data.history.map(d=>d.date)},yAxis:{type:'value',name:'万元'},
+                tooltip:{trigger:'axis'},legend:{data:['主力净流入','超大单','大单'],top:6},grid:{left:'10%',right:'4%',top:'18%',bottom:'12%'},
+                xAxis:{type:'category',data:data.history.map(d=>d.date),axisLabel:{fontSize:10}},yAxis:{type:'value',name:'万元'},
                 series:[{name:'主力净流入',type:'bar',data:data.history.map(d=>Math.round(d.main_inflow/1e4))},{name:'超大单',type:'bar',data:data.history.map(d=>Math.round(d.super_large/1e4))},{name:'大单',type:'bar',data:data.history.map(d=>Math.round(d.large/1e4))}]},true);
         }
         function drawCapT(data){const tb=document.getElementById('capital-tbody');if(!tb||!data.history)return;tb.innerHTML='';
@@ -761,8 +761,8 @@
         function updateSectorChart(){
             if(!charts['sector-chart']||!sectorDataCache)return;
             const s=[...sectorDataCache].sort((a,b)=>b.change-a.change);
-            charts['sector-chart'].setOption({title:{text:'板块涨跌分布',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},
-                xAxis:{type:'value',name:'%'},yAxis:{type:'category',data:s.map(x=>x.name).reverse(),inverse:true},
+            charts['sector-chart'].setOption({title:{text:'板块涨跌分布',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},grid:{left:'15%',right:'8%',top:'5%',bottom:'5%'},
+                xAxis:{type:'value',name:'%'},yAxis:{type:'category',data:s.map(x=>x.name).reverse(),inverse:true,axisLabel:{fontSize:11}},
                 series:[{type:'bar',data:s.map(x=>({value:x.change,itemStyle:{color:x.change>=0?'#ef4444':'#10b981'}})).reverse(),label:{show:true,position:'right',formatter:'{c}%'}}]},true);
         }
         function updateSectorTable(){const tb=document.getElementById('sector-tbody');if(!tb||!sectorDataCache)return;tb.innerHTML='';
@@ -773,8 +773,8 @@
             tr.innerHTML='<td>'+d.rank+'</td><td>'+d.code+'</td><td>'+d.name+'</td><td class="'+(parseFloat(d.change)>=0?'up':'down')+'">'+d.change+'%</td><td>'+d.reason+'</td><td>'+d.netBuy+'</td><td><button onclick="selectStock(\''+d.code+'\');switchTab(\'chart\')" style="background:none;border:none;color:#3b82f6;cursor:pointer;">查看</button></td>';
             tb.appendChild(tr);});}
         function updateBacktestChart(){const bd=backtestData;if(!charts['backtest-chart']||!bd)return;
-            charts['backtest-chart'].setOption({title:{text:'大单策略 vs 基准收益曲线',left:'center',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},legend:{data:['大单策略','基准'],top:6},
-                xAxis:{type:'category',data:bd.dates,boundaryGap:false},yAxis:{type:'value',name:'%'},
+            charts['backtest-chart'].setOption({title:{text:'大单策略 vs 基准收益曲线',left:'center',textStyle:{fontSize:14}},tooltip:{trigger:'axis'},legend:{data:['大单策略','基准'],top:6},grid:{left:'8%',right:'4%',top:'18%',bottom:'12%'},
+                xAxis:{type:'category',data:bd.dates,boundaryGap:false,axisLabel:{fontSize:10}},yAxis:{type:'value',name:'%'},
                 series:[{name:'大单策略',type:'line',data:bd.strategy_returns,smooth:true,lineStyle:{width:2,color:'#ef4444'}},{name:'基准',type:'line',data:bd.benchmark_returns,smooth:true,lineStyle:{width:2,color:'#94a3b8'}}]},true);
             const m=bd.metrics||{};
             ['backtest-return','backtest-annual','backtest-drawdown','backtest-winrate','backtest-trades'].forEach((id,i)=>{
