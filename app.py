@@ -35,6 +35,14 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
+# 禁用浏览器缓存，确保用户总是获取最新数据
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 # ====== 配置文件路径 ======
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
