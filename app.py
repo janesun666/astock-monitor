@@ -693,25 +693,65 @@ def generate_demo_dragon_tiger():
     return result
 
 
-def generate_demo_sector_list():
-    """生成模拟板块数据"""
-    sectors = [
-        ("白酒", 12), ("新能源", 25), ("半导体", 18), ("医药", 15),
-        ("金融", 8), ("消费", 10), ("科技", 20), ("军工", 14),
-        ("有色金属", 16), ("房地产", 5), ("煤炭", 7), ("钢铁", 6)
-    ]
+def get_custom_sector_summary():
+    """根据配置的板块和实时数据计算板块汇总"""
+    config = load_config()
+    
+    # 按板块分组
+    sector_stocks = {}
+    for s in config.get('monitor_stocks', []):
+        sec = s.get('sector', '其他')
+        if sec not in sector_stocks:
+            sector_stocks[sec] = []
+        sector_stocks[sec].append(s)
     
     result = []
-    for name, net_inflow in sectors:
+    for sector_name, stocks in sector_stocks.items():
+        # 获取该板块各股票的实时数据
+        changes = []
+        lead_stock_name = stocks[0].get('name', '-') if stocks else '-'
+        max_change = -999
+        
+        for stock in stocks:
+            code = stock.get('code', '')
+            
+            # 检查缓存中的实时数据
+            with _realtime_cache_lock:
+                cached = _realtime_cache.get(code)
+                if cached:
+                    data, _ = cached
+                    change_pct = data.get('change_pct', 0)
+                    name = data.get('name', stock.get('name', ''))
+                    changes.append(change_pct)
+                    
+                    # 找领涨股（涨幅最大）
+                    if change_pct > max_change:
+                        max_change = change_pct
+                        lead_stock_name = name
+        
+        # 计算板块平均涨跌幅
+        avg_change = round(sum(changes) / len(changes), 2) if changes else round(random.uniform(-2, 3), 2)
+        
+        # 模拟净流入（基于涨跌幅估算）
+        net_inflow = avg_change * random.randint(5, 20) * 1e8
+        
         result.append({
-            "name": name,
+            "name": sector_name,
             "code": "",
-            "change_pct": round(random.uniform(-3, 5), 2),
-            "lead_stock": random.choice(["600519", "300750", "002594", "600276"]),
-            "net_inflow": net_inflow * 100000000
+            "change_pct": avg_change,
+            "lead_stock": lead_stock_name,
+            "net_inflow": net_inflow,
+            "stock_count": len(stocks)
         })
     
+    # 按涨跌幅排序
+    result.sort(key=lambda x: x['change_pct'], reverse=True)
     return result
+
+
+def generate_demo_sector_list():
+    """生成模拟板块数据（已废弃，保留兼容）"""
+    return get_custom_sector_summary()
 
 
 # ====== Flask 路由 ======
@@ -960,14 +1000,18 @@ def api_dragon_tiger():
 
 @app.route('/api/sectors')
 def api_sectors():
-    """获取板块数据"""
-    data = None
-    if AKSHARE_AVAILABLE:
-        data = get_sector_list_akshare()
-    
-    if not data:
+    """获取板块数据 - 使用配置的自定义板块"""
+    # 优先使用自定义板块汇总（基于实时数据）
+    data = get_custom_sector_summary()
+
+    # 如果没有实时数据，尝试AKShare行业板块作为补充
+    if not data or len(data) == 0:
+        if AKSHARE_AVAILABLE:
+            ak_data = get_sector_list_akshare()
+            if ak_data:
+                return jsonify(ak_data)
         data = generate_demo_sector_list()
-    
+
     return jsonify(data)
 
 
