@@ -755,14 +755,10 @@
             if(!charts['capital-chart']||!data.history)return;
             const dates=data.history.map(d=>d.date);
             const mainArr=data.history.map(d=>Math.round(d.main_inflow/1e4));
-            const slArr=data.history.map(d=>Math.round(d.super_large/1e4));
-            const lgArr=data.history.map(d=>Math.round(d.large/1e4));
-            const mdArr=data.history.map(d=>Math.round(d.medium/1e4));
-            const smArr=data.history.map(d=>Math.round(d.small/1e4));
 
-            // 柱状颜色函数：正值红色(涨/流入)，负值绿色(跌/流出)
-            const barColor=function(params){return params.value>=0?'#ef4444':'#10b981';};
-            const barBgColor=function(params){return params.value>=0?'rgba(239,68,68,0.6)':'rgba(16,185,129,0.6)'};
+            // 预算 tooltip 细分数据
+            const detailMap={};
+            data.history.forEach(d=>{detailMap[d.date]=d;});
 
             charts['capital-chart'].setOption({
                 title:{text:data.name+' 资金流向',left:'center',textStyle:{fontSize:14,fontWeight:600}},
@@ -771,77 +767,58 @@
                     axisPointer:{type:'shadow'},
                     formatter:function(p){
                         if(!p||!p.length)return '';
-                        let s='<b>'+p[0].axisValue+'</b><br/>';
-                        p.forEach(item=>{
-                            const v=item.value;
-                            const color=v>=0?'#ef4444':'#10b981';
-                            s+=item.marker+' '+item.seriesName+': <span style="color:'+color+';font-weight:600">'+(v>=0?'+':'')+v.toLocaleString()+'</span> 万元<br/>';
+                        const item=p[0];
+                        const dateStr=item.axisValue;
+                        const det=detailMap[dateStr]||{};
+                        const v=item.value;
+                        const color=v>=0?'#ef4444':'#10b981';
+                        let s='<div style="font-weight:600;margin-bottom:6px">'+dateStr+'</div>';
+                        s+='<div>'+item.marker+' 主力净流入: <b style="color:'+color+'">'+(v>=0?'+':'')+v.toLocaleString()+'</b> 万元</div>';
+                        s+='<hr style="margin:6px 0;border-color:#e2e8f0">';
+                        const subs=[{k:'超大单',v:det.super_large},{k:'大单',v:det.large},{k:'中单',v:det.medium},{k:'小单',v:det.small}];
+                        subs.forEach(sub=>{
+                            const sv=Math.round((sub.v||0)/1e4);
+                            const sc=(sub.v||0)>=0?'#ef4444':'#10b981';
+                            s+='<div style="font-size:11px;padding-left:8px">'+sub.k+': <span style="color:'+sc+'">'+(sv>=0?'+':'')+sv.toLocaleString()+'</span></div>';
                         });
                         return s;
                     }
                 },
-                legend:{
-                    data:['主力净流入','超大单','大单','中单','小单'],
-                    top:8,
-                    textStyle:{fontSize:11}
-                },
-                grid:{left:'12%',right:'5%',top:'22%',bottom:'12%'},
-                xAxis:{type:'category',data:dates,axisLabel:{fontSize:11,rotate:15}},
+                legend:{show:false},
+                grid:{left:'14%',right:'5%',top:'16%',bottom:'12%'},
+                xAxis:{type:'category',data:dates,axisLabel:{fontSize:11,rotate:15,interval:0}},
                 yAxis:{
                     type:'value',
                     name:'万元',
                     axisLabel:{fontSize:11},
                     splitLine:{lineStyle:{type:'dashed',color:'#e2e8f0'}}
                 },
-                // 标记零线
                 markLine:{
                     silent:true,
                     symbol:'none',
                     lineStyle:{type:'solid',color:'#94a3b8',width:1},
-                    data:[{yAxis:0,label:{formatter:'零线',fontSize:10,color:'#94a3b8'}}]
+                    data:[{yAxis:0}]
                 },
-                series:[
-                    {
-                        name:'主力净流入',
-                        type:'bar',
-                        data:mainArr,
-                        barMaxWidth:28,
-                        itemStyle:{color:barColor},
-                        label:{show:false}
+                series:[{
+                    name:'主力净流入',
+                    type:'bar',
+                    data:mainArr,
+                    barMaxWidth:36,
+                    barGap:'30%',
+                    itemStyle:{
+                        borderRadius:[2,2,0,0],
+                        color:function(params){return params.value>=0?'#ef4444':'#10b981';}
                     },
-                    {
-                        name:'超大单',
-                        type:'bar',
-                        stack:'detail',
-                        data:slArr,
-                        itemStyle:{color:barColor,opacity:0.85},
-                        emphasis:{itemStyle:{opacity:1}}
-                    },
-                    {
-                        name:'大单',
-                        type:'bar',
-                        stack:'detail',
-                        data:lgArr,
-                        itemStyle:{color:barColor,opacity:0.7},
-                        emphasis:{itemStyle:{opacity:1}}
-                    },
-                    {
-                        name:'中单',
-                        type:'bar',
-                        stack:'detail',
-                        data:mdArr,
-                        itemStyle:{color:'#f59e0b',opacity:0.65},
-                        emphasis:{itemStyle:{opacity:1}}
-                    },
-                    {
-                        name:'小单',
-                        type:'bar',
-                        stack:'detail',
-                        data:smArr,
-                        itemStyle:{color:'#6366f1',opacity:0.55},
-                        emphasis:{itemStyle:{opacity:1}}
+                    label:{
+                        show:true,
+                        position:'top',
+                        fontSize:10,
+                        formatter:function(p){
+                            if(p.value===0) return '';
+                            return (p.value>0?'+':'')+p.value;
+                        }
                     }
-                ]
+                }]
             },true);
         }
         function drawCapT(data){const tb=document.getElementById('capital-tbody');if(!tb||!data.history)return;tb.innerHTML='';
