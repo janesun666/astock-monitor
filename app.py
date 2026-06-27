@@ -663,16 +663,26 @@ def generate_demo_intraday(code):
 
 
 def generate_demo_fund_flow(code):
-    """生成模拟资金流向"""
+    """生成模拟资金流向（内部一致）"""
+    # 先确定总主力净流入
+    main_inflow = random.randint(-100000000, 100000000)
+    
+    # 按大致比例拆分为超大单、大单、中单、小单
+    # 超大单: 40%, 大单: 30%, 中单: 20%, 小单: 10%
+    super_large = int(main_inflow * random.uniform(0.35, 0.45))
+    large = int(main_inflow * random.uniform(0.25, 0.35))
+    medium = int(main_inflow * random.uniform(0.15, 0.25))
+    small = main_inflow - super_large - large - medium  # 确保合计精确相等
+    
     return {
         "code": code,
         "name": next((s['name'] for s in load_config()['monitor_stocks'] if s['code'] == code), code),
-        "main_inflow": random.randint(-100000000, 100000000),
-        "main_inflow_pct": round(random.uniform(-5, 5), 2),
-        "super_large_inflow": random.randint(-50000000, 50000000),
-        "large_inflow": random.randint(-30000000, 30000000),
-        "medium_inflow": random.randint(-20000000, 20000000),
-        "small_inflow": random.randint(-10000000, 10000000)
+        "main_inflow": main_inflow,
+        "main_inflow_pct": round(main_inflow / 1e8 * random.uniform(0.5, 1.5), 2),
+        "super_large_inflow": super_large,
+        "large_inflow": large,
+        "medium_inflow": medium,
+        "small_inflow": small
     }
 
 
@@ -923,12 +933,19 @@ def api_kline(code):
     period = request.args.get('period', 'daily')
     count = int(request.args.get('count', 100))
     
+    source = "demo"
     data = None
     if AKSHARE_AVAILABLE:
         data = get_kline_data_akshare(code, period, count)
+        if data:
+            source = "akshare"
     
     if not data:
         data = generate_demo_kline(code, count)
+    
+    # 从配置中查找股票名称
+    config = load_config()
+    name = next((s['name'] for s in config['monitor_stocks'] if s['code'] == code), code)
     
     # 计算技术指标
     indicators = {}
@@ -939,6 +956,8 @@ def api_kline(code):
     
     return jsonify({
         "code": code,
+        "name": name,
+        "source": source,
         "period": period,
         "data": data,
         "indicators": indicators
@@ -950,15 +969,23 @@ def api_intraday(code):
     """获取分时数据"""
     code = format_stock_code(code)
     
+    source = "demo"
     data = None
     if AKSHARE_AVAILABLE:
         data = get_intraday_data_akshare(code)
+        if data:
+            source = "akshare"
     
     if not data:
         data = generate_demo_intraday(code)
     
+    config = load_config()
+    name = next((s['name'] for s in config['monitor_stocks'] if s['code'] == code), code)
+    
     return jsonify({
         "code": code,
+        "name": name,
+        "source": source,
         "data": data
     })
 
@@ -968,27 +995,36 @@ def api_fundflow(code):
     """获取资金流向"""
     code = format_stock_code(code)
     
+    source = "demo"
     data = None
     if AKSHARE_AVAILABLE:
         data = get_fund_flow_akshare(code)
+        if data:
+            source = "akshare"
     
     if not data:
         data = generate_demo_fund_flow(code)
     
-    # 生成历史数据（最近10天）
+    # 生成历史数据（最近10天，内部一致）
     history = []
     for i in range(10):
         date = (datetime.now() - timedelta(days=10-i)).strftime("%Y-%m-%d")
+        mi = random.randint(-100000000, 100000000)
+        sl = int(mi * random.uniform(0.35, 0.45))
+        lg = int(mi * random.uniform(0.25, 0.35))
+        md = int(mi * random.uniform(0.15, 0.25))
+        sm = mi - sl - lg - md
         history.append({
             "date": date,
-            "main_inflow": random.randint(-100000000, 100000000),
-            "super_large": random.randint(-50000000, 50000000),
-            "large": random.randint(-30000000, 30000000),
-            "medium": random.randint(-20000000, 20000000),
-            "small": random.randint(-10000000, 10000000)
+            "main_inflow": mi,
+            "super_large": sl,
+            "large": lg,
+            "medium": md,
+            "small": sm
         })
     
     data['history'] = history
+    data['source'] = source
     
     return jsonify(data)
 
@@ -996,12 +1032,19 @@ def api_fundflow(code):
 @app.route('/api/dragontiger')
 def api_dragon_tiger():
     """获取龙虎榜"""
+    source = "demo"
     data = None
     if AKSHARE_AVAILABLE:
         data = get_dragon_tiger_list()
+        if data:
+            source = "akshare"
     
     if not data:
         data = generate_demo_dragon_tiger()
+    
+    # 给每条记录添加数据源标记
+    for item in data:
+        item['_source'] = source
     
     return jsonify(data)
 
@@ -1015,6 +1058,10 @@ def api_sectors():
     # 如果自定义板块为空（不应该发生），返回空列表而非AKShare数据
     if not data:
         data = []
+    
+    # 标记数据源
+    for item in data:
+        item['_source'] = 'custom'
 
     return jsonify(data)
 
@@ -1141,7 +1188,7 @@ def api_add_alert():
 
 @app.route('/api/backtest')
 def api_backtest():
-    """策略回测（模拟）"""
+    """策略回测（模拟数据）"""
     # 模拟回测结果
     dates = []
     strategy_returns = []
@@ -1160,6 +1207,7 @@ def api_backtest():
         benchmark_returns.append(round((base_benchmark - 1) * 100, 2))
     
     return jsonify({
+        "_source": "demo",
         "dates": dates,
         "strategy_returns": strategy_returns,
         "benchmark_returns": benchmark_returns,
