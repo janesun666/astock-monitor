@@ -753,15 +753,111 @@
 
         function drawCap(data){
             if(!charts['capital-chart']||!data.history)return;
-            charts['capital-chart'].setOption({title:{text:data.name+'('+data.code+') - 资金流向',left:'center',textStyle:{fontSize:14}},
-                tooltip:{trigger:'axis'},legend:{data:['主力净流入','超大单','大单'],top:6},grid:{left:'10%',right:'4%',top:'18%',bottom:'12%'},
-                xAxis:{type:'category',data:data.history.map(d=>d.date),axisLabel:{fontSize:10}},yAxis:{type:'value',name:'万元'},
-                series:[{name:'主力净流入',type:'bar',data:data.history.map(d=>Math.round(d.main_inflow/1e4))},{name:'超大单',type:'bar',data:data.history.map(d=>Math.round(d.super_large/1e4))},{name:'大单',type:'bar',data:data.history.map(d=>Math.round(d.large/1e4))}]},true);
+            const dates=data.history.map(d=>d.date);
+            const mainArr=data.history.map(d=>Math.round(d.main_inflow/1e4));
+            const slArr=data.history.map(d=>Math.round(d.super_large/1e4));
+            const lgArr=data.history.map(d=>Math.round(d.large/1e4));
+            const mdArr=data.history.map(d=>Math.round(d.medium/1e4));
+            const smArr=data.history.map(d=>Math.round(d.small/1e4));
+
+            // 柱状颜色函数：正值红色(涨/流入)，负值绿色(跌/流出)
+            const barColor=function(params){return params.value>=0?'#ef4444':'#10b981';};
+            const barBgColor=function(params){return params.value>=0?'rgba(239,68,68,0.6)':'rgba(16,185,129,0.6)'};
+
+            charts['capital-chart'].setOption({
+                title:{text:data.name+' 资金流向',left:'center',textStyle:{fontSize:14,fontWeight:600}},
+                tooltip:{
+                    trigger:'axis',
+                    axisPointer:{type:'shadow'},
+                    formatter:function(p){
+                        if(!p||!p.length)return '';
+                        let s='<b>'+p[0].axisValue+'</b><br/>';
+                        p.forEach(item=>{
+                            const v=item.value;
+                            const color=v>=0?'#ef4444':'#10b981';
+                            s+=item.marker+' '+item.seriesName+': <span style="color:'+color+';font-weight:600">'+(v>=0?'+':'')+v.toLocaleString()+'</span> 万元<br/>';
+                        });
+                        return s;
+                    }
+                },
+                legend:{
+                    data:['主力净流入','超大单','大单','中单','小单'],
+                    top:8,
+                    textStyle:{fontSize:11}
+                },
+                grid:{left:'12%',right:'5%',top:'22%',bottom:'12%'},
+                xAxis:{type:'category',data:dates,axisLabel:{fontSize:11,rotate:15}},
+                yAxis:{
+                    type:'value',
+                    name:'万元',
+                    axisLabel:{fontSize:11},
+                    splitLine:{lineStyle:{type:'dashed',color:'#e2e8f0'}}
+                },
+                // 标记零线
+                markLine:{
+                    silent:true,
+                    symbol:'none',
+                    lineStyle:{type:'solid',color:'#94a3b8',width:1},
+                    data:[{yAxis:0,label:{formatter:'零线',fontSize:10,color:'#94a3b8'}}]
+                },
+                series:[
+                    {
+                        name:'主力净流入',
+                        type:'bar',
+                        data:mainArr,
+                        barMaxWidth:28,
+                        itemStyle:{color:barColor},
+                        label:{show:false}
+                    },
+                    {
+                        name:'超大单',
+                        type:'bar',
+                        stack:'detail',
+                        data:slArr,
+                        itemStyle:{color:barColor,opacity:0.85},
+                        emphasis:{itemStyle:{opacity:1}}
+                    },
+                    {
+                        name:'大单',
+                        type:'bar',
+                        stack:'detail',
+                        data:lgArr,
+                        itemStyle:{color:barColor,opacity:0.7},
+                        emphasis:{itemStyle:{opacity:1}}
+                    },
+                    {
+                        name:'中单',
+                        type:'bar',
+                        stack:'detail',
+                        data:mdArr,
+                        itemStyle:{color:'#f59e0b',opacity:0.65},
+                        emphasis:{itemStyle:{opacity:1}}
+                    },
+                    {
+                        name:'小单',
+                        type:'bar',
+                        stack:'detail',
+                        data:smArr,
+                        itemStyle:{color:'#6366f1',opacity:0.55},
+                        emphasis:{itemStyle:{opacity:1}}
+                    }
+                ]
+            },true);
         }
         function drawCapT(data){const tb=document.getElementById('capital-tbody');if(!tb||!data.history)return;tb.innerHTML='';
-            data.history.slice().reverse().forEach(r=>{const tr=document.createElement('tr');
-            tr.innerHTML='<td>'+r.date+'</td><td class="'+(r.main_inflow>=0?'up':'down')+'">'+(r.main_inflow/1e4).toFixed(0)+'</td><td>'+(r.super_large/1e4).toFixed(0)+'</td><td>'+(r.large/1e4).toFixed(0)+'</td><td>'+(r.medium/1e4).toFixed(0)+'</td><td>'+(r.small/1e4).toFixed(0)+'</td>';
-            tb.appendChild(tr);});}
+            data.history.slice().reverse().forEach(r=>{
+                const tr=document.createElement('tr');
+                const miC=r.main_inflow>=0?'up':'down';
+                tr.innerHTML=
+                    '<td>'+r.date+'</td>'+
+                    '<td class="'+miC+'" style="font-weight:600">'+(r.main_inflow/1e4).toFixed(0)+'</td>'+
+                    '<td class="'+(r.super_large>=0?'up':'down')+'">'+(r.super_large/1e4).toFixed(0)+'</td>'+
+                    '<td class="'+(r.large>=0?'up':'down')+'">'+(r.large/1e4).toFixed(0)+'</td>'+
+                    '<td>'+(r.medium/1e4).toFixed(0)+'</td>'+
+                    '<td>'+(r.small/1e4).toFixed(0)+'</td>';
+                tb.appendChild(tr);
+            });
+        }
 
         function updateSectorChart(){
             if(!charts['sector-chart']||!sectorDataCache)return;
