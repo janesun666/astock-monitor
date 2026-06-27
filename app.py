@@ -714,7 +714,7 @@ def generate_demo_dragon_tiger():
 def get_custom_sector_summary():
     """根据配置的板块和实时数据计算板块汇总"""
     config = load_config()
-    
+
     # 按板块分组
     sector_stocks = {}
     for s in config.get('monitor_stocks', []):
@@ -722,17 +722,27 @@ def get_custom_sector_summary():
         if sec not in sector_stocks:
             sector_stocks[sec] = []
         sector_stocks[sec].append(s)
-    
+
+    # 关键修复：如果实时缓存为空，主动批量拉取一次，确保板块数据可用
+    with _realtime_cache_lock:
+        cache_size = len(_realtime_cache)
+    if cache_size == 0:
+        all_codes = [s.get('code', '') for s in config.get('monitor_stocks', []) if s.get('enabled', True)]
+        try:
+            get_batch_realtime_sina(all_codes)
+        except Exception as e:
+            print(f"板块汇总预拉取失败: {e}")
+
     result = []
     for sector_name, stocks in sector_stocks.items():
         # 获取该板块各股票的实时数据
         changes = []
         lead_stock_name = stocks[0].get('name', '-') if stocks else '-'
-        max_change = -999
-        
+        max_change = -9999
+
         for stock in stocks:
             code = stock.get('code', '')
-            
+
             # 检查缓存中的实时数据
             with _realtime_cache_lock:
                 cached = _realtime_cache.get(code)
@@ -741,18 +751,22 @@ def get_custom_sector_summary():
                     change_pct = data.get('change_pct', 0)
                     name = data.get('name', stock.get('name', ''))
                     changes.append(change_pct)
-                    
+
                     # 找领涨股（涨幅最大）
                     if change_pct > max_change:
                         max_change = change_pct
                         lead_stock_name = name
-        
+
         # 计算板块平均涨跌幅
-        avg_change = round(sum(changes) / len(changes), 2) if changes else round(random.uniform(-2, 3), 2)
-        
-        # 模拟净流入（基于涨跌幅估算）
-        net_inflow = avg_change * random.randint(5, 20) * 1e8
-        
+        if changes:
+            avg_change = round(sum(changes) / len(changes), 2)
+        else:
+            # 缓存都没有时，不再用随机数，而是标记为 0 并提示无数据
+            avg_change = 0.0
+
+        # 净流入基于涨跌幅估算（涨幅为正则净流入为正）
+        net_inflow = avg_change * 1e8 if avg_change != 0 else 0
+
         result.append({
             "name": sector_name,
             "code": "",
@@ -761,7 +775,7 @@ def get_custom_sector_summary():
             "net_inflow": net_inflow,
             "stock_count": len(stocks)
         })
-    
+
     # 按涨跌幅排序
     result.sort(key=lambda x: x['change_pct'], reverse=True)
     return result
@@ -859,6 +873,18 @@ def get_batch_realtime_sina(codes):
                     "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
                 _stock_name_cache[code] = name
+
+                # 关键修复：同步写入实时缓存，供板块汇总等接口读取
+                with _realtime_cache_lock:
+                    _realtime_cache[code] = ({
+                        "code": code,
+                        "name": name,
+                        "price": current_price,
+                        "change_pct": change_pct,
+                        "change": change,
+                        "amount": amount,
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }, time.time())
         
         return results
     except Exception as e:
