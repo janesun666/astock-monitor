@@ -1008,17 +1008,13 @@ def api_dragon_tiger():
 
 @app.route('/api/sectors')
 def api_sectors():
-    """获取板块数据 - 使用配置的自定义板块"""
-    # 优先使用自定义板块汇总（基于实时数据）
+    """获取板块数据 - 始终使用自定义板块"""
+    # 强制只使用自定义板块汇总
     data = get_custom_sector_summary()
 
-    # 如果没有实时数据，尝试AKShare行业板块作为补充
-    if not data or len(data) == 0:
-        if AKSHARE_AVAILABLE:
-            ak_data = get_sector_list_akshare()
-            if ak_data:
-                return jsonify(ak_data)
-        data = generate_demo_sector_list()
+    # 如果自定义板块为空（不应该发生），返回空列表而非AKShare数据
+    if not data:
+        data = []
 
     return jsonify(data)
 

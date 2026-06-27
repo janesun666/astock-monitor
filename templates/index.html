@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>A股大单监控分析平台 - 完整版</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -671,7 +674,9 @@
             showNotification('已加载'+(st&&st.akshare_available?'(真实数据)':'(模拟数据)'),'success');
         });
 
-        async function loadBgData(){const[s,d,b]=await Promise.all([apiGet('/api/sectors'),apiGet('/api/dragontiger'),apiGet('/api/backtest')]);
+        async function loadBgData(){
+            const ts = Date.now();
+            const[s,d,b]=await Promise.all([apiGet('/api/sectors?v='+ts),apiGet('/api/dragontiger?v='+ts),apiGet('/api/backtest?v='+ts)]);
             if(s)sectorDataCache=s.map(x=>({name:x.name,change:x.change_pct,leader:x.lead_stock||'-',inflow:(x.net_inflow/1e8).toFixed(2)}));
             if(d)window.dragonData=d.map((x,i)=>({rank:i+1,code:x.code,name:x.name,change:x.change_pct.toFixed(2),reason:x.reason||'',netBuy:(x.net_buy/1e4).toFixed(0)}));
             if(b)window.backtestData=b;}
